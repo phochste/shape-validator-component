@@ -1,7 +1,8 @@
 {
     "@context": "https://linkedsoftwaredependencies.org/bundles/npm/shape-validation-component/^5.0.0/components/context.jsonld",
     "import": [
-        "shape-validation:config/ldp/metadata-writer/default.json"
+        "shape-validation:config/ldp/metadata-writer/default.json",
+        "shape-validation:config/storage/middleware/default.json"
     ]
   }
   
