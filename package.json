@@ -16,7 +16,9 @@
     "https://linkedsoftwaredependencies.org/bundles/npm/shape-validation-component/^5.0.0/dist/": "dist/"
   },
   "scripts": {
-    "start": "community-solid-server -c shape-default.json -p 3123 -m .",
+    "start": "community-solid-server -c shape-default.json -f ./data -m .",
+    "start:file": "community-solid-server -c shape-file-no-setup.json -f ./data -m .",
+    "start:memory": "community-solid-server -c shape-memory-no-setup.json -m .",
     "build": "npm run build:ts && npm run build:components",
     "build:components": "componentsjs-generator -s src -c dist/components -i .componentsignore -r shape-validation",
     "build:ts": "tsc",
