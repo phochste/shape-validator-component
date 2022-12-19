@@ -20,18 +20,6 @@ Configurations for in-memory storage and file storage without setup are also pro
 
 ## Feedback and questions
 
-Do not hesitate to [report a bug](https://github.com/woutslabbinck/shape-validator-component/issues).
+Do not hesitate to [report a bug](https://github.com/CommunitySolidServer/shape-validator-component/issues).
 
 Further questions can also be asked to [Wout Slabbinck](mailto:wout.slabbinck@ugent.be) (developer and maintainer of this repository).
-
-## TODOs
-
-- [x] make https://github.com/woutslabbinck/community-server/tree/feat/shape-support work in this directory
-  - [x] override link header attempt
-- [x] make the tests work
-  - [x] unit
-  - [x] integration
-- [x] add README.md
-- [ ] move to CSS organization
-- [ ] ask feedback Joachim (zal pas na Januari zijn)
-- [ ] publish op npm: https://www.npmjs.com/org/community-solid-server
