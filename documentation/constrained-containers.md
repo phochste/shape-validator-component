@@ -22,7 +22,7 @@ with `"rel"` `http://www.w3.org/ns/ldp#constrainedBy` as is defined in [LDP](htt
 
 ## Impact of constraining a container
 
-Obviously, only resources can be created that conform to the constraints on a constrained container.
+Only resources can be created that conform to the constraints on a constrained container.
 However, some additional restrictions are enforced by the server on that container:
 
 * It is not possible to add any non-RDF resources.
