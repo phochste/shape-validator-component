@@ -4,7 +4,7 @@ import type { Term } from 'rdf-js';
 import type { AuxiliaryStrategy } from '@solid/community-server'
 import type { Representation } from '@solid/community-server'
 import type { ResourceIdentifier } from '@solid/community-server'
-import { getLoggerFor } from '@solid/community-server'
+import {BasicRepresentation, getLoggerFor} from '@solid/community-server'
 import { INTERNAL_QUADS } from '@solid/community-server'
 import { BadRequestHttpError } from '@solid/community-server'
 import { NotFoundHttpError } from '@solid/community-server'
@@ -84,16 +84,19 @@ export class ShapeValidationStore extends PassthroughStore {
       const parentIdentifier = this.identifierStrategy.getParentContainer(identifier);
       // In case the parent being http://localhost:3123/.internal/setup/ getting the representation would result into a
       // NotFoundHttpError
+      let parentRepresentation: BasicRepresentation = new BasicRepresentation();
       try {
-        const parentRepresentation = await this.source.getRepresentation(parentIdentifier, {});
-        await this.validator.handleSafe({ parentRepresentation,
-          representation });
+        parentRepresentation = await this.source.getRepresentation(parentIdentifier, {});
       } catch (error: unknown) {
         if (!NotFoundHttpError.isInstance(error)) {
           throw error;
         }
       }
+      await this.validator.handleSafe({ parentRepresentation, representation });
     }
+    // TODO: check in changemap from this.source.setRepresentation(identifier, representation, conditions);
+    //  When there are more than three resources changed, check the parent of them all whether it is shape constrained.
+    //  if so, delete all newly created resources. (don't know if i can do this directly or if it should be done recursively -> Ask Joachim)
     return this.source.setRepresentation(identifier, representation, conditions);
   }
 

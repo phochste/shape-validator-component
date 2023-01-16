@@ -1,5 +1,15 @@
 import type { AuxiliaryStrategy, RepresentationConverter } from '@solid/community-server';
-import { BadRequestHttpError, cloneRepresentation, fetchDataset, getLoggerFor, InternalServerError, INTERNAL_QUADS, NotImplementedHttpError, readableToQuads } from '@solid/community-server';
+import {
+  BadRequestHttpError,
+  cloneRepresentation,
+  fetchDataset,
+  getLoggerFor,
+  InternalServerError,
+  INTERNAL_QUADS,
+  NotImplementedHttpError,
+  readableToQuads,
+  BasicRepresentation
+} from '@solid/community-server';
 import type { Store } from 'n3';
 import SHACLValidator from 'rdf-validate-shacl';
 import { LDP, SH } from '../../util/Vocabularies';
@@ -12,7 +22,6 @@ import { ShapeValidator } from './ShapeValidator';
 export class ShaclValidator extends ShapeValidator {
   private readonly converter: RepresentationConverter;
   protected readonly logger = getLoggerFor(this);
-  private readonly noShapePresent = 'No ldp:constrainedBy predicate.';
   private readonly auxiliaryStrategy: AuxiliaryStrategy;
 
   public constructor(converter: RepresentationConverter, auxiliaryStrategy: AuxiliaryStrategy) {
@@ -21,10 +30,14 @@ export class ShaclValidator extends ShapeValidator {
     this.auxiliaryStrategy = auxiliaryStrategy;
   }
 
-  public async canHandle({ parentRepresentation }: ShapeValidatorInput): Promise<void> {
+  public async canHandle({ parentRepresentation, representation }: ShapeValidatorInput): Promise<void> {
+    if (this.auxiliaryStrategy.isAuxiliaryIdentifier({ path: representation.metadata.identifier.value })) {
+      throw new NotImplementedHttpError('No shape validation executed on auxiliary files.');
+    }
+
     const shapeURL = parentRepresentation.metadata.get(LDP.terms.constrainedBy)?.value;
     if (!shapeURL) {
-      throw new Error(this.noShapePresent);
+      throw new NotImplementedHttpError('No ldp:constrainedBy predicate.');
     }
   }
 
@@ -32,7 +45,7 @@ export class ShaclValidator extends ShapeValidator {
     const { parentRepresentation, representation } = input;
     // Check if the parent has ldp:constrainedBy in the metadata
     const shapeURL = parentRepresentation.metadata.get(LDP.terms.constrainedBy)!.value;
-    let representationData;
+    let representationData: BasicRepresentation;
     // Convert the RDF representation to a N3.Store
     const preferences = { type: { [INTERNAL_QUADS]: 1 }};
     try {
@@ -46,23 +59,13 @@ export class ShaclValidator extends ShapeValidator {
       });
     } catch (error: unknown) {
       representation.data.destroy();
-      if (error instanceof NotImplementedHttpError) {
+      if (NotImplementedHttpError.isInstance(error)) {
         throw new BadRequestHttpError('Data could not be validated as it could not be converted to rdf',
-          { details: { ...error, message: error.message }});
-      }
-
-      if (error instanceof InternalServerError) {
-        throw new BadRequestHttpError('Not allowed to create new containers within a constrained container',
           { details: { ...error, message: error.message }});
       }
       throw error;
     }
     const dataStore = await readableToQuads(representationData.data);
-
-    if (this.auxiliaryStrategy.isAuxiliaryIdentifier({ path: representation.metadata.identifier.value })) {
-      this.logger.debug('It is an auxiliary file, no validation is required here.');
-      return;
-    }
 
     this.logger.debug(`URL of the shapefile present in the metadata of the parent: ${shapeURL}`);
     const shape = await fetchDataset(shapeURL);
@@ -104,13 +107,9 @@ export class ShaclValidator extends ShapeValidator {
   private targetClassCheck(shapeStore: Store, dataStore: Store, shapeURL: string): void {
     // Find if any of the sh:targetClass are present
     const targetClasses = shapeStore.getObjects(null, SH.targetClass, null);
-    let targetClassesPresent = false;
-    for (const targetClass of targetClasses) {
-      targetClassesPresent = targetClassesPresent || dataStore.countQuads(null, null, targetClass, null) > 0;
-    }
+    let targetClassesPresent = targetClasses.some(targetClass => dataStore.countQuads(null, null, targetClass, null) > 0);
     if (!targetClassesPresent) {
-      throw new BadRequestHttpError(`${'Data not accepted as no nodes in the body conform ' +
-     'to any of the target classes of '}${shapeURL}`);
+      throw new BadRequestHttpError(`Data not accepted as no nodes in the body conform to any of the target classes of ${shapeURL}`);
     }
   }
 }

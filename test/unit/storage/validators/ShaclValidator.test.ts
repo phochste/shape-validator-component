@@ -108,13 +108,6 @@ describe('ShaclValidator', (): void => {
     await expect(validator.handleSafe(input)).rejects.toThrow(BadRequestHttpError);
   });
 
-  it('throws error when the converter fails due empty input to validate.', async(): Promise<void> => {
-    // This happens in the case that an attempt is made to add a new container within the constrained container.
-    converter.handleSafe = jest.fn().mockImplementationOnce((): void => {
-      throw new InternalServerError('error');
-    });
-    await expect(validator.handleSafe(input)).rejects.toThrow(BadRequestHttpError);
-  });
 
   it('does not execute validation when the target resource is an auxiliary resource.', async(): Promise<void> => {
     input.representation.metadata.identifier = namedNode(root + auxiliarySuffix);
