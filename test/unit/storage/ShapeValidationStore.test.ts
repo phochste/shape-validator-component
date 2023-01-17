@@ -1,6 +1,6 @@
 import { DataFactory } from 'n3';
-import type { AuxiliaryStrategy } from '@solid/community-server'
-import { BasicRepresentation } from '@solid/community-server'
+import type {AuxiliaryStrategy, ChangeMap} from '@solid/community-server'
+import {BasicRepresentation, IdentifierMap, RepresentationMetadata} from '@solid/community-server'
 import type { Representation } from '@solid/community-server'
 import type { RepresentationConverter } from '@solid/community-server'
 import type { ResourceStore } from '@solid/community-server'
@@ -71,7 +71,8 @@ describe('ShapeValidationStore', (): void => {
     const metadataURL = containerURL + metaSuffix;
     const shapeConstraintQuad = quad(namedNode(containerURL), LDP.terms.constrainedBy, namedNode(shapeURL));
     const shapeConstraintQuad2 = quad(namedNode(containerURL), LDP.terms.constrainedBy, namedNode(`${shapeURL}1`));
-    let metadataRepresentation: Representation =
+    let metadataRepresentation: Representation;
+    let changeMap: ChangeMap;
 
     beforeEach((): void => {
       representation = new BasicRepresentation();
@@ -79,6 +80,8 @@ describe('ShapeValidationStore', (): void => {
       parentRepresentation = new BasicRepresentation();
       source.getRepresentation = jest.fn().mockReturnValue(parentRepresentation);
 
+      changeMap = new IdentifierMap();
+      source.setRepresentation = jest.fn().mockReturnValueOnce(changeMap)
       metadataRepresentation = new BasicRepresentation(
         guardedStreamFrom([ shapeConstraintQuad ]),
         { path: metadataURL },
@@ -89,13 +92,27 @@ describe('ShapeValidationStore', (): void => {
     it('calls the source setRepresentation when the resource ID is the root.', async(): Promise<void> => {
       const resourceID = { path: root };
 
-      await expect(store.setRepresentation(resourceID, representation)).resolves.toBe('set');
+      await expect(store.setRepresentation(resourceID, representation)).resolves.toBe(changeMap);
     });
 
     it('calls the validator with the correct arguments.', async(): Promise<void> => {
       const resourceID = { path: `${root}resource.ttl` };
 
-      await expect(store.setRepresentation(resourceID, representation)).resolves.toBe('set');
+      await expect(store.setRepresentation(resourceID, representation)).resolves.toBe(changeMap);
+      expect(validator.handleSafe).toHaveBeenCalledTimes(1);
+      expect(validator.handleSafe).toHaveBeenCalledWith({ parentRepresentation, representation });
+      expect(source.getRepresentation).toHaveBeenCalledTimes(1);
+      expect(source.getRepresentation).toHaveBeenLastCalledWith({ path: root }, {});
+      expect(source.setRepresentation).toHaveBeenCalledTimes(1);
+      expect(source.setRepresentation).toHaveBeenLastCalledWith(resourceID, representation, undefined);
+    });
+
+    it('calls the validator with the correct arguments and ChangeMap of size 2.', async(): Promise<void> => {
+      const resourceID = { path: `${root}resource.ttl` };
+      changeMap.set(resourceID, new RepresentationMetadata());
+      changeMap.set({path: containerURL}, new RepresentationMetadata());
+
+      await expect(store.setRepresentation(resourceID, representation)).resolves.toBe(changeMap);
       expect(validator.handleSafe).toHaveBeenCalledTimes(1);
       expect(validator.handleSafe).toHaveBeenCalledWith({ parentRepresentation, representation });
       expect(source.getRepresentation).toHaveBeenCalledTimes(1);
@@ -122,7 +139,7 @@ describe('ShapeValidationStore', (): void => {
         new BasicRepresentation(guardedStreamFrom([ ]), resourceID, INTERNAL_QUADS),
       );
 
-      await expect(store.setRepresentation(resourceID, representation)).resolves.toBe('set');
+      await expect(store.setRepresentation(resourceID, representation)).resolves.toBe(changeMap);
       expect(validator.handleSafe).toHaveBeenCalledTimes(1);
       expect(validator.handleSafe).toHaveBeenCalledWith({ parentRepresentation, representation });
       expect(source.getRepresentation).toHaveBeenCalledTimes(2);
@@ -178,7 +195,7 @@ describe('ShapeValidationStore', (): void => {
           ]), resourceID, INTERNAL_QUADS),
         ).mockReturnValueOnce(metadataRepresentation);
 
-        await expect(store.setRepresentation(resourceID, representation)).resolves.toBe('set');
+        await expect(store.setRepresentation(resourceID, representation)).resolves.toBe(changeMap);
         expect(validator.handleSafe).toHaveBeenCalledTimes(1);
         expect(validator.handleSafe).toHaveBeenCalledWith({ parentRepresentation, representation });
         expect(source.getRepresentation).toHaveBeenCalledTimes(2);
@@ -199,6 +216,75 @@ describe('ShapeValidationStore', (): void => {
       await expect(store.setRepresentation(resourceID, representation)).rejects.toThrow(new BadRequestHttpError(
         'A container can only be constrained when there are no resources present in that container.',
       ));
+    });
+
+    it('errors when a container is created in shape constrained container.', async(): Promise<void> => {
+      const resourceID = {path: `${containerURL}newContainer/`};
+      changeMap.set({path: containerURL}, new RepresentationMetadata());
+      changeMap.set(resourceID, new RepresentationMetadata());
+
+      converter.handleSafe = jest.fn().mockReturnValueOnce(metadataRepresentation).mockReturnValueOnce(
+          new BasicRepresentation(guardedStreamFrom([ ]), resourceID, INTERNAL_QUADS),
+      );
+      source.deleteResource = jest.fn().mockReturnValue('delete');
+
+      await expect(store.setRepresentation(resourceID, representation)).rejects.toThrow(new BadRequestHttpError(
+          'Not allowed to create new containers within a constrained container',
+      ));
+      expect(validator.handleSafe).toHaveBeenCalledTimes(1);
+      expect(validator.handleSafe).toHaveBeenCalledWith({ parentRepresentation, representation });
+      expect(source.getRepresentation).toHaveBeenCalledTimes(2);
+      expect(source.setRepresentation).toHaveBeenCalledTimes(1);
+      expect(source.setRepresentation).toHaveBeenLastCalledWith(resourceID, representation, undefined);
+      expect(source.deleteResource).toHaveBeenCalledTimes(1);
+      expect(source.deleteResource).toHaveBeenCalledWith(resourceID);
+    });
+
+    it('errors when a nested container is created in a shape constrained container.', async () => {
+      const createdContainerID = {path: `${containerURL}newContainer/`};
+      const resourceID = {path: `${createdContainerID.path}resource`};
+      changeMap.set(resourceID, new RepresentationMetadata());
+      changeMap.set({path: containerURL}, new RepresentationMetadata());
+      changeMap.set(createdContainerID, new RepresentationMetadata());
+      converter.handleSafe = jest.fn().mockReturnValueOnce(metadataRepresentation).mockReturnValueOnce(
+          new BasicRepresentation(guardedStreamFrom([ ]), resourceID, INTERNAL_QUADS),
+      );
+      converter.handleSafe = jest.fn().mockReturnValueOnce(metadataRepresentation).mockReturnValueOnce(
+          new BasicRepresentation(guardedStreamFrom([ ]), resourceID, INTERNAL_QUADS),
+      );
+      source.deleteResource = jest.fn().mockReturnValue('delete');
+
+      await expect(store.setRepresentation(resourceID, representation)).rejects.toThrow(new BadRequestHttpError(
+          'Not allowed to create new containers within a constrained container',
+      ));
+      expect(validator.handleSafe).toHaveBeenCalledTimes(1);
+      expect(validator.handleSafe).toHaveBeenCalledWith({ parentRepresentation, representation });
+      expect(source.getRepresentation).toHaveBeenCalledTimes(2);
+      expect(source.setRepresentation).toHaveBeenCalledTimes(1);
+      expect(source.setRepresentation).toHaveBeenLastCalledWith(resourceID, representation, undefined);
+      expect(source.deleteResource).toHaveBeenCalledTimes(2);
+      expect(source.deleteResource).toHaveBeenLastCalledWith(createdContainerID);
+    });
+
+    it('creates new containers when the top container is not constrained by a shape.', async () => {
+      const createdContainerID = {path: `${containerURL}newContainer/`};
+      const resourceID = {path: `${createdContainerID.path}resource`};
+      changeMap.set(resourceID, new RepresentationMetadata());
+      changeMap.set({path: containerURL}, new RepresentationMetadata());
+      changeMap.set(createdContainerID, new RepresentationMetadata());
+      converter.handleSafe = jest.fn().mockReturnValueOnce(new BasicRepresentation()).mockReturnValueOnce(
+          new BasicRepresentation(guardedStreamFrom([ ]), resourceID, INTERNAL_QUADS),
+      );
+
+      source.deleteResource = jest.fn().mockReturnValue('delete');
+
+      await expect(store.setRepresentation(resourceID, representation)).resolves.toBe(changeMap);
+      expect(validator.handleSafe).toHaveBeenCalledTimes(1);
+      expect(validator.handleSafe).toHaveBeenCalledWith({ parentRepresentation, representation });
+      expect(source.getRepresentation).toHaveBeenCalledTimes(2);
+      expect(source.setRepresentation).toHaveBeenCalledTimes(1);
+      expect(source.setRepresentation).toHaveBeenLastCalledWith(resourceID, representation, undefined);
+      expect(source.deleteResource).toHaveBeenCalledTimes(0);
     });
   });
 });
