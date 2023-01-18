@@ -9,7 +9,6 @@ import { ShaclValidator } from '../../../../src/storage/validators/ShaclValidato
 import type { ShapeValidatorInput } from '../../../../src/storage/validators/ShapeValidator';
 import { INTERNAL_QUADS } from '@solid/community-server';
 import { BadRequestHttpError } from '@solid/community-server';
-import { InternalServerError } from '@solid/community-server';
 import { NotImplementedHttpError } from '@solid/community-server';
 import { fetchDataset } from '@solid/community-server';
 import { guardedStreamFrom } from '@solid/community-server';
@@ -74,13 +73,16 @@ describe('ShaclValidator', (): void => {
     jest.clearAllMocks();
   });
 
-  it('throws error if the parent container is not constrained by a shape.', async(): Promise<void> => {
-    input.parentRepresentation = new BasicRepresentation();
-    await expect(validator.canHandle(input)).rejects.toThrow(Error);
-  });
 
   it('does not validate when the parent container is not constrained by a shape.', async(): Promise<void> => {
     input.parentRepresentation = new BasicRepresentation();
+    await expect(validator.handleSafe(input)).resolves.toBeUndefined();
+    expect(converter.handleSafe).toHaveBeenCalledTimes(0);
+    expect(fetchDataset).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not validate when the representation is empty.', async(): Promise<void> => {
+    input.representation = new BasicRepresentation()
     await expect(validator.handleSafe(input)).resolves.toBeUndefined();
     expect(converter.handleSafe).toHaveBeenCalledTimes(0);
     expect(fetchDataset).toHaveBeenCalledTimes(0);

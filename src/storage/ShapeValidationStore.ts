@@ -105,7 +105,6 @@ export class ShapeValidationStore extends PassthroughStore {
       const createdIdentifiers = Array.from(filter(updatedResources.keys(), (id: ResourceIdentifier) => id.path !== topIdentifier.path));
       const sortedIdentifiers = createdIdentifiers.sort((a: ResourceIdentifier, b: ResourceIdentifier) => b.path.length - a.path.length);
       for (const sortedIdentifier of sortedIdentifiers) {
-        console.log(sortedIdentifier)
         await this.source.deleteResource(sortedIdentifier);
       }
       throw new BadRequestHttpError("Not allowed to create new containers within a constrained container");

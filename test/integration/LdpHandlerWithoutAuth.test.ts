@@ -1,18 +1,8 @@
-import { createReadStream } from 'fs';
 import fetch from 'cross-fetch';
-import type { Quad } from 'n3';
-import { DataFactory, Parser, Store } from 'n3';
-import { joinFilePath, PIM, RDF } from '@solid/community-server';
-import type { App } from '@solid/community-server';
-import {
-    deleteResource,
-    expectQuads,
-    getResource,
-    patchResource,
-    postResource,
-    putResource,
-} from '../util/FetchUtil';
-import { getPort } from '../util/Util';
+import {DataFactory} from 'n3';
+import type {App} from '@solid/community-server';
+import {deleteResource, getResource, patchResource, postResource, putResource,} from '../util/FetchUtil';
+import {getPort} from '../util/Util';
 import {
     getDefaultVariables,
     getPresetConfigPath,
@@ -21,7 +11,6 @@ import {
     instantiateFromConfig,
     removeFolder,
 } from './Config';
-const { literal, namedNode, quad } = DataFactory;
 
 const port = getPort('LpdHandlerWithoutAuth');
 const baseUrl = `http://localhost:${port}/`;
@@ -76,10 +65,7 @@ describe.each(stores)('An LDP handler allowing all requests %s', (name, { storeC
     const conformingResource = `<a> a <http://example.org/c>.
     <a> <http://xmlns.com/foaf/0.1/name> "test".`;
 
-    it('can validate RDF resources using SHACL shapes.', async(): Promise<void> => {
-        const shapeURL = `${baseUrl}shape`;
-        const constrainedContainerURL = `${baseUrl}constrained/`;
-
+    async function initialiseShapeContainer(shapeURL: string, constrainedContainerURL: string): Promise<void> {
         // PUT shape
         await putResource(shapeURL, { contentType: 'text/turtle', body: shape });
 
@@ -97,6 +83,18 @@ describe.each(stores)('An LDP handler allowing all requests %s', (name, { storeC
         const constrainedContainerResponse = await getResource(constrainedContainerURL);
         expect(constrainedContainerResponse.headers.get('link'))
             .toContain(`<${shapeURL}>; rel="http://www.w3.org/ns/ldp#constrainedBy"`);
+    }
+
+    async function cleanupShapeContainer(shapeURL: string, constrainedContainerURL: string): Promise<void> {
+        expect(await deleteResource(constrainedContainerURL)).toBeUndefined();
+        expect(await deleteResource(shapeURL)).toBeUndefined();
+    }
+
+    it('can validate RDF resources using SHACL shapes.', async(): Promise<void> => {
+        const shapeURL = `${baseUrl}shape`;
+        const constrainedContainerURL = `${baseUrl}constrained/`;
+
+        await initialiseShapeContainer(shapeURL, constrainedContainerURL);
 
         // POST: Add resource to constrained container which is valid
         const postResponse = await postResource(
@@ -120,42 +118,57 @@ describe.each(stores)('An LDP handler allowing all requests %s', (name, { storeC
 
         // DELETE
         expect(await deleteResource(postResponse.headers.get('location')!)).toBeUndefined();
-        expect(await deleteResource(constrainedContainerURL)).toBeUndefined();
-        expect(await deleteResource(shapeURL)).toBeUndefined();
+        await cleanupShapeContainer(shapeURL, constrainedContainerURL);
     });
 
     it('can not validate non-RDF resources using SHACL shapes.', async(): Promise<void> => {
         const shapeURL = `${baseUrl}shape`;
         const constrainedContainerURL = `${baseUrl}constrained/`;
 
-        // PUT shape
-        await putResource(shapeURL, { contentType: 'text/turtle', body: shape });
-
-        // PUT container for constrained resources
-        await putResource(constrainedContainerURL, { contentType: 'text/turtle' });
-
-        // PATCH: Add shape constraint to container
-        await patchResource(
-            constrainedContainerURL + metaSuffix,
-            `INSERT DATA { <${constrainedContainerURL}> <http://www.w3.org/ns/ldp#constrainedBy> <${shapeURL}>}`,
-            'sparql',
-            true,
-        );
-
-        const constrainedContainerResponse = await getResource(constrainedContainerURL);
-        expect(constrainedContainerResponse.headers.get('link'))
-            .toContain(`<${shapeURL}>; rel="http://www.w3.org/ns/ldp#constrainedBy"`);
+        await initialiseShapeContainer(shapeURL, constrainedContainerURL);
 
         // POST non-RDF resource
-        const response1 = await fetch(constrainedContainerURL, {
+        const response = await fetch(constrainedContainerURL, {
             method: 'POST',
             headers: { 'content-type': 'text/plain' },
             body: 'Hello world!',
         });
-        expect(response1.status).toBe(400);
+        expect(response.status).toBe(400);
 
         // DELETE
-        expect(await deleteResource(constrainedContainerURL)).toBeUndefined();
-        expect(await deleteResource(shapeURL)).toBeUndefined();
+        await cleanupShapeContainer(shapeURL, constrainedContainerURL);
+    });
+
+    it('can not created containers within a constrained container.', async (): Promise<void> => {
+        const shapeURL = `${baseUrl}shape`;
+        const constrainedContainerURL = `${baseUrl}constrained/`;
+
+        await initialiseShapeContainer(shapeURL, constrainedContainerURL);
+
+        // new container directly
+        const newContainerURL = `${constrainedContainerURL}shouldNotBeAllowed/`;
+
+        const containerCreateResponse = await fetch(newContainerURL,{
+            method: "PUT"
+        });
+
+        expect(containerCreateResponse.status).toBe(400);
+        const containerGetResponse = await fetch(newContainerURL);
+        expect(containerGetResponse.status).toBe(404);
+
+        // new container indirectly
+        const resourceURL = `${newContainerURL}resource`;
+
+        const resourceCreateResponse = await fetch(resourceURL,{
+            method: "PUT",
+            headers: {'content-type':'text/turtle'},
+            body: '<a> <b> <c>.'
+        });
+        expect(resourceCreateResponse.status).toBe(400);
+        const resourceGetResponse = await fetch(resourceURL);
+        expect(resourceGetResponse.status).toBe(404);
+
+        // DELETE
+        await cleanupShapeContainer(shapeURL, constrainedContainerURL);
     });
 });

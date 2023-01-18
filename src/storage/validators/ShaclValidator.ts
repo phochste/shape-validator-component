@@ -1,20 +1,19 @@
-import type { AuxiliaryStrategy, RepresentationConverter } from '@solid/community-server';
+import type {AuxiliaryStrategy, RepresentationConverter} from '@solid/community-server';
 import {
   BadRequestHttpError,
+  BasicRepresentation,
   cloneRepresentation,
   fetchDataset,
   getLoggerFor,
-  InternalServerError,
   INTERNAL_QUADS,
   NotImplementedHttpError,
-  readableToQuads,
-  BasicRepresentation
+  readableToQuads
 } from '@solid/community-server';
-import type { Store } from 'n3';
+import type {Store} from 'n3';
 import SHACLValidator from 'rdf-validate-shacl';
-import { LDP, SH } from '../../util/Vocabularies';
-import type { ShapeValidatorInput } from './ShapeValidator';
-import { ShapeValidator } from './ShapeValidator';
+import {LDP, SH} from '../../util/Vocabularies';
+import type {ShapeValidatorInput} from './ShapeValidator';
+import {ShapeValidator} from './ShapeValidator';
 
 /**
  * Validates a Representation against SHACL shapes using an external SHACL validator.
@@ -39,14 +38,18 @@ export class ShaclValidator extends ShapeValidator {
     if (!shapeURL) {
       throw new NotImplementedHttpError('No ldp:constrainedBy predicate.');
     }
+
+    if (representation.isEmpty) {
+      throw new BadRequestHttpError('Data could not be validated as it could not be converted to rdf');
+    }
   }
 
   public async handle(input: ShapeValidatorInput): Promise<void> {
     const { parentRepresentation, representation } = input;
-    // Check if the parent has ldp:constrainedBy in the metadata
     const shapeURL = parentRepresentation.metadata.get(LDP.terms.constrainedBy)!.value;
-    let representationData: BasicRepresentation;
+
     // Convert the RDF representation to a N3.Store
+    let representationData: BasicRepresentation;
     const preferences = { type: { [INTERNAL_QUADS]: 1 }};
     try {
       // Creating a new representation as the data might be written later by DataAccessorBasedStore
